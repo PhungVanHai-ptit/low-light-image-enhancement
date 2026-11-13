@@ -18,10 +18,22 @@ from source.algorithms.clahe import clahe as clahe_custom
 from source.evaluation.metrics import compute_metrics
 
 
+
+def _measure_algorithm(function, y, **params):
+    """Warm up once, then return the result and median of five runs in ms."""
+    function(y, **params)
+    durations = []
+    for _ in range(5):
+        start = time.perf_counter()
+        result = function(y, **params)
+        durations.append((time.perf_counter() - start) * 1000)
+    return result, float(np.median(durations))
+
+
 def compare_with_opencv(y: np.ndarray, method: str, params: Optional[dict] = None) -> dict:
     """
     Compare from-scratch result vs OpenCV result.
-    method: 'he' or 'clahe'
+    method: 'gamma', 'he' or 'clahe'; times are five-run medians after warm-up
     Returns: {"our_result": ndarray, "cv_result": ndarray, "mae": float, "our_ms": float, "cv_ms": float}
     """
     if params is None:
@@ -31,33 +43,29 @@ def compare_with_opencv(y: np.ndarray, method: str, params: Optional[dict] = Non
     if method not in ("gamma", "he", "clahe"):
         raise ValueError(f"Unsupported method for OpenCV comparison: {method}")
 
-    # Our implementation
-    t0 = time.perf_counter()
     if method == "gamma":
         gamma_val = params.get("gamma", 0.6)
-        our_result = gamma_correct(y, gamma=gamma_val)
+        our_result, our_ms = _measure_algorithm(gamma_correct, y, gamma=gamma_val)
+        # LUT application benchmark; the gamma formula is supplied by us.
+        def apply_gamma_lut(image):
+            levels = np.arange(256, dtype=np.float64) / 255.0
+            lut = np.clip(np.round(255.0 * levels ** gamma_val), 0, 255).astype(np.uint8)
+            return cv2.LUT(image, lut)
+        cv_result, cv_ms = _measure_algorithm(apply_gamma_lut, y)
     elif method == "he":
-        our_result = equalize_hist(y)
-    elif method == "clahe":
-        our_result = clahe_custom(y, **params)
-    our_ms = (time.perf_counter() - t0) * 1000
-
-    # OpenCV implementation
-    t0 = time.perf_counter()
-    if method == "gamma":
-        gamma_val = params.get("gamma", 0.6)
-        inv_gamma = 1.0 / 255.0
-        lut = np.clip(np.round(255.0 * ((np.arange(256, dtype=np.float64) * inv_gamma) ** gamma_val)), 0, 255).astype(np.uint8)
-        cv_result = cv2.LUT(y, lut)
-    elif method == "he":
-        cv_result = cv2.equalizeHist(y)
-    elif method == "clahe":
+        our_result, our_ms = _measure_algorithm(equalize_hist, y)
+        cv_result, cv_ms = _measure_algorithm(cv2.equalizeHist, y)
+    else:
+        our_result, our_ms = _measure_algorithm(clahe_custom, y, **params)
         grid = params.get("grid", (8, 8))
         clip = params.get("clip_factor", 2.0)
-        # OpenCV clipLimit nhận trực tiếp hệ số multiplier tương đương clip_factor
-        cv_clahe = cv2.createCLAHE(clipLimit=float(clip), tileGridSize=(grid[1], grid[0]))
-        cv_result = cv_clahe.apply(y)
-    cv_ms = (time.perf_counter() - t0) * 1000
+        # Identical parameters can still yield different implementation results.
+        def apply_cv_clahe(image):
+            algorithm = cv2.createCLAHE(
+                clipLimit=float(clip), tileGridSize=(grid[1], grid[0])
+            )
+            return algorithm.apply(image)
+        cv_result, cv_ms = _measure_algorithm(apply_cv_clahe, y)
 
     mae = float(np.mean(np.abs(our_result.astype(np.float64) - cv_result.astype(np.float64))))
 
@@ -90,9 +98,7 @@ def run_benchmark(image_paths: List[Union[str, Path]], output_csv: Union[str, Pa
         m_before = compute_metrics(y)
 
         # Gamma
-        t0 = time.perf_counter()
-        y_gamma = gamma_correct(y, gamma=0.6)
-        gamma_ms = (time.perf_counter() - t0) * 1000
+        y_gamma, gamma_ms = _measure_algorithm(gamma_correct, y, gamma=0.6)
         m_gamma = compute_metrics(y_gamma)
         rows.append({
             "filename": Path(img_path).name,
