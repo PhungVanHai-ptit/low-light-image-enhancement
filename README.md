@@ -1,48 +1,64 @@
 # Low-Light Image Enhancement
 
-Ứng dụng cải thiện chất lượng ảnh thiếu sáng (Low-Light Image Enhancement) cho môn học **Xử lý ảnh số (INT13146)** - Học viện Công nghệ Bưu chính Viễn thông (PTIT).
+Ung dung cai thien chat luong anh thieu sang (Low-Light Image Enhancement) cho mon hoc **Xu ly anh so (INT13146)** - Hoc vien Cong nghe Buu chinh Vien thong (PTIT).
 
 ---
 
-##  Giới thiệu dự án
+## 1. Gioi thieu du an
 
-Dự án tập trung vào việc **tự cài đặt từ đầu (from scratch)** các thuật toán nâng cao chất lượng ảnh bằng **NumPy**, không sử dụng các hàm xử lý ảnh có sẵn của thư viện. Thư viện OpenCV chỉ được sử dụng cho mục đích **đối chứng và đánh giá định lượng**.
+Du an tap trung vao viec **tu cai dat tu dau (from scratch)** cac thuat toan nang cao chat luong anh bang **NumPy**, khong su dung cac ham xu ly anh co san cua thu vien. Thu vien OpenCV chi duoc su dung cho muc dich **doi chung va danh gia dinh luong**.
 
-### Các thuật toán chính:
-1. **Gamma Correction** (Hiệu chỉnh Gamma phi tuyến).
-2. **Global Histogram Equalization (HE)** (Cân bằng lược đồ mức xám toàn cục).
-3. **Contrast Limited Adaptive Histogram Equalization (CLAHE)** (Cân bằng lược đồ thích nghi giới hạn độ tương phản với nội suy song tuyến tính).
-
----
-
-##  Tính năng nổi bật
-
-* **Bảo toàn màu sắc:** Chuyển đổi ảnh sang không gian màu $YC_bC_r$ bằng công thức chuẩn ITU-R BT.601; chỉ tăng cường kênh sáng $Y$, giữ nguyên hai kênh màu $C_b, C_r$ để tránh sai lệch màu.
-* **Giao diện trực quan (GUI):** Cho phép tải ảnh, tùy chỉnh tham số theo thời gian thực, xem ảnh trước/sau và biểu đồ histogram song song.
-* **Đánh giá & Đối chứng:** Đo thời gian thực thi và đối chứng kết quả trực tiếp với các hàm tương ứng của OpenCV (`cv2.equalizeHist`, `cv2.createCLAHE`).
+### Cac thuat toan chinh:
+1. **Gamma Correction** (Hieu chinh Gamma phi tuyen qua bang tra LUT).
+2. **Global Histogram Equalization (HE)** (Can bang luoc do muc xam toan cuc qua ham phan phoi tich luy CDF va bang tra LUT).
+3. **Contrast Limited Adaptive Histogram Equalization (CLAHE)** (Can bang luoc do thich nghi gioi han do tuong phan, chia o luoi, cat nguong phan phoi lai phan du va noi suy song tuyen tinh).
 
 ---
 
-##  Cấu trúc thư mục dự kiến
+## 2. Tinh nang noi bat
+
+* **Bao toan mau sac:** Chuyen doi anh sang khong gian mau YCbCr theo tieu chuan ITU-R BT.601; chi tang cuong kenh do sang Y, giu nguyen hai kenh mau Cb, Cr de tranh sai lech mau.
+* **Giao dien nguoi dung (Desktop GUI - Tkinter):**
+  * Tuy chinh tham so thanh truot theo thoi gian thuc (Real-time slider).
+  * Che do nhan giu chuot so sanh truc tiep Truoc / Sau (Before / After).
+  * Tich hop bieu do truc quan hoa luoc do muc xam (Matplotlib Histogram 256 muc).
+  * Che do tong quan so sanh dong thoi 4 khung anh (Anh goc, Gamma, HE, CLAHE).
+* **Danh gia va doi chung dinh luong:** Do thoi gian thuc thi (ms) va doi chung ket qua truc tiep voi cac ham tuong ung cua OpenCV (`cv2.equalizeHist`, `cv2.createCLAHE`) qua sai so tuyet doi trung binh (MAE).
+
+---
+
+## 3. Cau truc thu muc du an
 
 ```text
 low-light-image-enhancement/
-├── docs/                     # Tài liệu thiết kế, quy ước API (contracts.md)
-├── data/                     # Tập ảnh thử nghiệm (indoor, outdoor, difficult)
-├── results/                  # Kết quả xử lý, biểu đồ và CSV đánh giá
+├── docs/                     # Tai lieu thiet ke, quy uoc API (contracts.md, ke hoach chi tiet)
+├── data/
+│   ├── input/                # Tap anh thu nghiem (sample_dark.png, ...)
+│   └── manifest.csv          # Danh sach metadata bo anh thu nghiem
+├── results/                  # Ket qua do dac benchmark (benchmark.csv)
 ├── source/
-│   ├── algorithms/           # Cài đặt thuật toán from-scratch
+│   ├── algorithms/           # Cai dat thuat toan from-scratch bang NumPy
 │   │   ├── gamma.py          # Gamma Correction (TV1)
-│   │   ├── hist_equal.py     # Histogram Equalization (TV2)
-│   │   └── clahe.py          # CLAHE (TV3)
-│   ├── core/                 # Xử lý màu sắc, I/O và pipeline điều phối (TV1)
-│   │   ├── color.py
-│   │   ├── io.py
-│   │   └── pipeline.py
-│   ├── evaluation/           # Đối chứng OpenCV & đo đạc số liệu (TV2)
-│   ├── ui/                   # Giao diện người dùng Tkinter (TV1)
-│   └── app.py                # Điểm khởi chạy ứng dụng
-├── tests/                    # Unit tests kiểm tra tính đúng thuật toán
+│   │   ├── hist_equal.py     # Global Histogram Equalization (TV2)
+│   │   └── clahe.py          # CLAHE with Bilinear Interpolation (TV3)
+│   ├── core/                 # Module loi dung chung
+│   │   ├── color.py          # Chuyen doi RGB <-> YCbCr BT.601 (TV1)
+│   │   ├── io.py             # Doc/ghi anh chuan hoa (TV1)
+│   │   └── pipeline.py       # Pipeline dieu phoi thuat toan va do thoi gian (TV1)
+│   ├── evaluation/           # Doi chung OpenCV va do dac so lieu (TV2)
+│   │   ├── metrics.py        # Tinh Mean, Std, White ratio
+│   │   └── benchmark.py      # Do toc do, tinh MAE voi OpenCV, xuat CSV
+│   ├── ui/                   # Giao dien nguoi dung Tkinter (TV1)
+│   │   └── main_window.py
+│   └── app.py                # Diem khoi chay ung dung (GUI / CLI)
+├── tests/                    # 31 Unit tests tu dong kiem thu toan dien
+│   ├── test_color.py
+│   ├── test_io.py
+│   ├── test_gamma.py
+│   ├── test_he.py
+│   └── test_clahe.py
+├── run_app.bat               # Script khoi dong ung dung tren Windows
+├── run_tests.bat             # Script chay kiem thu unit tests tren Windows
 ├── .gitignore
 ├── requirements.txt
 └── README.md
@@ -50,37 +66,61 @@ low-light-image-enhancement/
 
 ---
 
-##  Cài đặt & Chạy ứng dụng
+## 4. Cai dat va chay ung dung
 
-### 1. Yêu cầu môi trường
-* Python 3.10+ (khuyên dùng Python 3.11)
+### 4.1. Yeu cau moi truong
+* Python 3.10 tro len (khuyen dung Python 3.11 hoac 3.12)
 
-### 2. Thiết lập môi trường ảo
+### 4.2. Thiet lap moi truong ao va cai dat thu vien
 ```bash
-# Tạo môi trường ảo
+# Tao moi truong ao
 python -m venv .venv
 
-# Kích hoạt môi trường (Windows PowerShell)
+# Kich hoat moi truong ao (Windows PowerShell)
 .venv\Scripts\Activate.ps1
 
-# Cài đặt thư viện phụ trợ
+# Cai dat thu vien phu tro
 pip install -r requirements.txt
 ```
 
-### 3. Chạy ứng dụng giao diện
+### 4.3. Chay ung dung giao dien (GUI)
+* Cach 1: Nhap dup vao file `run_app.bat` tren Windows.  
+* Cach 2: Chay lenh terminal:
 ```bash
 python -m source.app
 ```
 
-### 4. Chạy kiểm thử tự động
+### 4.4. Chay kiem thu tu dong (Unit Tests)
+* Cach 1: Nhap dup vao file `run_tests.bat` tren Windows.  
+* Cach 2: Chay lenh terminal:
 ```bash
-python -m unittest discover -s tests
+python -m unittest discover -s tests -v
+```
+
+### 4.5. Chay module Benchmark doi chung voi OpenCV
+Chay lenh xuat bang du lieu doi chung ra file `results/benchmark.csv`:
+```bash
+python -c "from source.evaluation.benchmark import run_benchmark; run_benchmark(['data/input/sample_dark.png'], 'results/benchmark.csv')"
 ```
 
 ---
 
-##  Phân công nhiệm vụ (Nhóm 3 thành viên)
+## 5. Ket qua doi chung thuc nghiem (Tren anh mau sample_dark.png)
 
-* **TV1 (Lead & Tích hợp):** Thuật toán Gamma, xử lý không gian màu $YC_bC_r$, pipeline điều phối và giao diện ứng dụng (GUI).
-* **TV2 (Đánh giá & Dữ liệu):** Thuật toán Histogram Equalization (HE), bộ dữ liệu thử nghiệm, module đối chứng OpenCV và phân tích số liệu.
-* **TV3 (Thuật toán CLAHE):** Cài đặt thuật toán CLAHE (chia ô, clipping, phân phối lại phần dư và nội suy song tuyến tính).
+| Thuat toan | Thoi gian thuc thi (From-scratch) | Thoi gian OpenCV | Sai so MAE vs OpenCV | Do sang trung binh (Truoc -> Sau) | Do tuong phan (Std) |
+|---|---|---|---|---|---|
+| **Gamma (gamma=0.6)** | ~0.65 ms | N/A | N/A | 33.47 -> 73.80 | 13.33 -> 18.79 |
+| **Global HE** | ~1.63 ms | ~0.27 ms | **0.0000** | 33.47 -> 124.89 | 13.33 -> 76.66 |
+| **CLAHE (8x8, clip=2.0)** | ~19.85 ms | ~11.58 ms | **8.0525** | 33.47 -> 44.38 | 13.33 -> 16.96 |
+
+> **Nhan xet:**
+> - Thuat toan **Global HE** tu cai dat dat do chinh xac tuyet doi (MAE = 0.0000) so voi ham `cv2.equalizeHist`.
+> - Thuat toan **CLAHE** tu viet kem noi suy song tuyen tinh cho anh sang tu nhien, han che hien tuong phong dai nhieu va vo mang so voi HE toan cuc.
+
+---
+
+## 6. Phan cong nhiem vu (Nhom 3 thanh vien)
+
+* **TV1 (Lead va Tich hop):** Thuat toan Gamma Correction, xu ly khong gian mau YCbCr, pipeline dieu phoi va giao dien Desktop GUI (Tkinter nhung Matplotlib).
+* **TV2 (Danh gia va Du lieu):** Thuat toan Global Histogram Equalization (HE), bo du lieu thu nghiem, module doi chung OpenCV va phan tich so lieu (MAE, thoi gian).
+* **TV3 (Thuat toan CLAHE):** Cai dat thuat toan CLAHE from-scratch (chia luoi contextual regions, cat nguong clipping, phan phoi lai phan du va noi suy song tuyen tinh bilinear).
