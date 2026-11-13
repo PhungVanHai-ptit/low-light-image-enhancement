@@ -66,6 +66,7 @@ coverage.xml
 *.tmp
 *.temp
 
+local/
 # Large experiment outputs (giữ lại cấu trúc thư mục bằng .gitkeep)
 # results/*
 # !results/.gitkeep
