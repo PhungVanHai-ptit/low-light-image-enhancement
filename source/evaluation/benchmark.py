@@ -28,12 +28,15 @@ def compare_with_opencv(y: np.ndarray, method: str, params: Optional[dict] = Non
         params = {}
 
     method = method.lower()
-    if method not in ("he", "clahe"):
+    if method not in ("gamma", "he", "clahe"):
         raise ValueError(f"Unsupported method for OpenCV comparison: {method}")
 
     # Our implementation
     t0 = time.perf_counter()
-    if method == "he":
+    if method == "gamma":
+        gamma_val = params.get("gamma", 0.6)
+        our_result = gamma_correct(y, gamma=gamma_val)
+    elif method == "he":
         our_result = equalize_hist(y)
     elif method == "clahe":
         our_result = clahe_custom(y, **params)
@@ -41,7 +44,12 @@ def compare_with_opencv(y: np.ndarray, method: str, params: Optional[dict] = Non
 
     # OpenCV implementation
     t0 = time.perf_counter()
-    if method == "he":
+    if method == "gamma":
+        gamma_val = params.get("gamma", 0.6)
+        inv_gamma = 1.0 / 255.0
+        lut = np.clip(np.round(255.0 * ((np.arange(256, dtype=np.float64) * inv_gamma) ** gamma_val)), 0, 255).astype(np.uint8)
+        cv_result = cv2.LUT(y, lut)
+    elif method == "he":
         cv_result = cv2.equalizeHist(y)
     elif method == "clahe":
         grid = params.get("grid", (8, 8))

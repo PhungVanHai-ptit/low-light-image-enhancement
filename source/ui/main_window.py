@@ -30,6 +30,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from source.core.io import load_image, save_image
 from source.core.pipeline import enhance
+from source.core.color import rgb_to_ycbcr, ycbcr_to_rgb
+from source.evaluation.benchmark import compare_with_opencv
 
 
 class MainWindow(tk.Tk):
@@ -47,6 +49,14 @@ class MainWindow(tk.Tk):
 
         # Trạng thái ảnh so sánh đồng thời (Tab 3)
         self.multi_compare_images: dict = {}
+        self.zoom_size_tab3: int = 280
+
+        # Trạng thái ảnh đối chứng OpenCV (Tab 4)
+        self.opencv_compare_images: dict = {}
+        self.zoom_size_tab4: int = 460
+
+        # Trạng thái kích thước hiển thị ảnh Tab 1
+        self.zoom_size: int = 460
 
         self._init_style()
         self._build_ui()
@@ -177,6 +187,11 @@ class MainWindow(tk.Tk):
         self.notebook.add(self.tab_multi, text=" 🔍 So sánh cả 3 thuật toán (Overview) ")
         self._build_tab_multi()
 
+        # Tab 4: Đối chứng trực tiếp với OpenCV
+        self.tab_opencv = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_opencv, text=" ⚖️ Đối chứng OpenCV (Benchmark) ")
+        self._build_tab_opencv()
+
         # 4. Status Bar
         self.status_var = tk.StringVar(value="Sẵn sàng. Vui lòng mở ảnh chụp thiếu sáng.")
         status_bar = ttk.Label(
@@ -207,11 +222,31 @@ class MainWindow(tk.Tk):
 
         self.lbl_compare_hint = ttk.Label(
             top_bar,
-            text="Mẹo: Bạn có thể nhấn giữ nút bên trái để so sánh trực tiếp ảnh trước và sau tăng cường.",
+            text="Mẹo: Nhấn giữ nút bên trái để so sánh trực tiếp trước/sau.",
             font=("Segoe UI", 9, "italic"),
             foreground="#555"
         )
-        self.lbl_compare_hint.pack(side=tk.LEFT, padx=10)
+        self.lbl_compare_hint.pack(side=tk.LEFT, padx=8)
+
+        # Điều khiển kích thước hiển thị ảnh
+        zoom_frame = ttk.Frame(top_bar)
+        zoom_frame.pack(side=tk.RIGHT, padx=4)
+
+        ttk.Label(zoom_frame, text="🔍 Cỡ hiển thị:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=3)
+        self.zoom_lbl = ttk.Label(zoom_frame, text="460 px", width=7)
+        self.zoom_lbl.pack(side=tk.LEFT, padx=2)
+
+        self.zoom_scale = ttk.Scale(
+            zoom_frame,
+            from_=200,
+            to=900,
+            value=460,
+            command=self._on_zoom_change
+        )
+        self.zoom_scale.pack(side=tk.LEFT, padx=4)
+
+        self.btn_zoom_fit = ttk.Button(zoom_frame, text="Mặc định", width=8, command=self._on_zoom_reset)
+        self.btn_zoom_fit.pack(side=tk.LEFT, padx=2)
 
         # Khung hiển thị 2 ảnh
         img_container = ttk.Frame(panel)
@@ -339,13 +374,76 @@ class MainWindow(tk.Tk):
 
         ttk.Label(
             top_ctrl,
-            text="(Hiển thị 4 khung so sánh trực tiếp trên cùng một màn hình)",
+            text="(4 khung so sánh trực tiếp)",
             font=("Segoe UI", 9, "italic"),
             foreground="#555"
-        ).pack(side=tk.LEFT, padx=8)
+        ).pack(side=tk.LEFT, padx=6)
 
-        grid_frame = ttk.Frame(panel)
-        grid_frame.pack(fill=tk.BOTH, expand=True)
+        # Điều khiển kích thước hiển thị ảnh Tab 3
+        zoom_frame_tab3 = ttk.Frame(top_ctrl)
+        zoom_frame_tab3.pack(side=tk.RIGHT, padx=4)
+
+        ttk.Label(zoom_frame_tab3, text="🔍 Cỡ hiển thị:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=3)
+        self.zoom_lbl_tab3 = ttk.Label(zoom_frame_tab3, text="280 px", width=7)
+        self.zoom_lbl_tab3.pack(side=tk.LEFT, padx=2)
+
+        self.zoom_scale_tab3 = ttk.Scale(
+            zoom_frame_tab3,
+            from_=160,
+            to=600,
+            value=280,
+            command=self._on_zoom_change_tab3
+        )
+        self.zoom_scale_tab3.pack(side=tk.LEFT, padx=4)
+
+        self.btn_zoom_fit_tab3 = ttk.Button(zoom_frame_tab3, text="Mặc định", width=8, command=self._on_zoom_reset_tab3)
+        self.btn_zoom_fit_tab3.pack(side=tk.LEFT, padx=2)
+
+        # Vùng cuộn (Scrollable Canvas) cho Tab 3
+        canvas_container = ttk.Frame(panel)
+        canvas_container.pack(fill=tk.BOTH, expand=True)
+
+        self.canvas_tab3 = tk.Canvas(canvas_container, highlightthickness=0)
+        v_scrollbar_tab3 = ttk.Scrollbar(canvas_container, orient=tk.VERTICAL, command=self.canvas_tab3.yview)
+        self.canvas_tab3.configure(yscrollcommand=v_scrollbar_tab3.set)
+
+        v_scrollbar_tab3.pack(side=tk.RIGHT, fill=tk.Y)
+        self.canvas_tab3.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        grid_frame = ttk.Frame(self.canvas_tab3)
+        self.canvas_window_tab3 = self.canvas_tab3.create_window((0, 0), window=grid_frame, anchor="nw")
+
+        def _on_tab3_frame_configure(event=None):
+            req_h = grid_frame.winfo_reqheight()
+            canvas_h = self.canvas_tab3.winfo_height()
+            final_h = max(req_h, canvas_h)
+            self.canvas_tab3.itemconfig(self.canvas_window_tab3, height=final_h)
+            self.canvas_tab3.configure(scrollregion=(0, 0, self.canvas_tab3.winfo_width(), req_h))
+
+        def _on_tab3_canvas_configure(event):
+            # Luôn lấp đầy chiều rộng của màn hình
+            self.canvas_tab3.itemconfig(self.canvas_window_tab3, width=event.width)
+            req_h = grid_frame.winfo_reqheight()
+            final_h = max(req_h, event.height)
+            self.canvas_tab3.itemconfig(self.canvas_window_tab3, height=final_h)
+            self.canvas_tab3.configure(scrollregion=(0, 0, event.width, req_h))
+
+        grid_frame.bind("<Configure>", _on_tab3_frame_configure)
+        self.canvas_tab3.bind("<Configure>", _on_tab3_canvas_configure)
+
+        def _on_mousewheel(event):
+            try:
+                # Đơn vị cuộn chuẩn trên Windows
+                delta = int(-1 * (event.delta / 120))
+                current_tab = self.notebook.index(self.notebook.select())
+                if current_tab == 2:
+                    self.canvas_tab3.yview_scroll(delta, "units")
+                elif current_tab == 3:
+                    self.canvas_tab4.yview_scroll(delta, "units")
+            except Exception:
+                pass
+
+        self.bind_all("<MouseWheel>", _on_mousewheel)
 
         # 4 ô lưới 2x2
         self.multi_boxes = {}
@@ -373,8 +471,206 @@ class MainWindow(tk.Tk):
             self.multi_boxes[key] = {"lbl_img": lbl_img, "lbl_info": lbl_info}
 
     # -------------------------------------------------------------
+    # BUILD TAB 4: ĐỐI CHỨNG TRỰC TIẾP VỚI THƯ VIỆN OPENCV
+    # -------------------------------------------------------------
+    def _build_tab_opencv(self):
+        panel = ttk.Frame(self.tab_opencv, padding=8)
+        panel.pack(fill=tk.BOTH, expand=True)
+
+        top_ctrl = ttk.Frame(panel)
+        top_ctrl.pack(fill=tk.X, pady=(0, 6))
+
+        ttk.Label(top_ctrl, text="Chọn thuật toán đối chứng:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=4)
+        self.cv_algo_var = tk.StringVar(value="gamma")
+        self.combo_cv_algo = ttk.Combobox(
+            top_ctrl,
+            textvariable=self.cv_algo_var,
+            values=["gamma", "he", "clahe"],
+            state="readonly",
+            width=10
+        )
+        self.combo_cv_algo.pack(side=tk.LEFT, padx=4)
+
+        self.btn_run_opencv_compare = ttk.Button(
+            top_ctrl,
+            text="⚡ Chạy đối chứng với OpenCV",
+            command=self._on_run_opencv_comparison,
+            state=tk.DISABLED
+        )
+        self.btn_run_opencv_compare.pack(side=tk.LEFT, padx=8)
+
+        ttk.Label(
+            top_ctrl,
+            text="(So sánh pixel-by-pixel)",
+            font=("Segoe UI", 9, "italic"),
+            foreground="#555"
+        ).pack(side=tk.LEFT, padx=4)
+
+        # Điều khiển kích thước hiển thị ảnh Tab 4
+        zoom_frame_tab4 = ttk.Frame(top_ctrl)
+        zoom_frame_tab4.pack(side=tk.RIGHT, padx=4)
+
+        ttk.Label(zoom_frame_tab4, text="🔍 Cỡ hiển thị:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=3)
+        self.zoom_lbl_tab4 = ttk.Label(zoom_frame_tab4, text="460 px", width=7)
+        self.zoom_lbl_tab4.pack(side=tk.LEFT, padx=2)
+
+        self.zoom_scale_tab4 = ttk.Scale(
+            zoom_frame_tab4,
+            from_=200,
+            to=900,
+            value=460,
+            command=self._on_zoom_change_tab4
+        )
+        self.zoom_scale_tab4.pack(side=tk.LEFT, padx=4)
+
+        self.btn_zoom_fit_tab4 = ttk.Button(zoom_frame_tab4, text="Mặc định", width=8, command=self._on_zoom_reset_tab4)
+        self.btn_zoom_fit_tab4.pack(side=tk.LEFT, padx=2)
+
+        # Vùng cuộn (Scrollable Canvas) cho Tab 4
+        canvas_container_tab4 = ttk.Frame(panel)
+        canvas_container_tab4.pack(fill=tk.BOTH, expand=True)
+
+        self.canvas_tab4 = tk.Canvas(canvas_container_tab4, highlightthickness=0)
+        v_scrollbar_tab4 = ttk.Scrollbar(canvas_container_tab4, orient=tk.VERTICAL, command=self.canvas_tab4.yview)
+        self.canvas_tab4.configure(yscrollcommand=v_scrollbar_tab4.set)
+
+        v_scrollbar_tab4.pack(side=tk.RIGHT, fill=tk.Y)
+        self.canvas_tab4.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        container = ttk.Frame(self.canvas_tab4)
+        self.canvas_window_tab4 = self.canvas_tab4.create_window((0, 0), window=container, anchor="nw")
+
+        def _on_tab4_frame_configure(event=None):
+            req_h = container.winfo_reqheight()
+            canvas_h = self.canvas_tab4.winfo_height()
+            final_h = max(req_h, canvas_h)
+            self.canvas_tab4.itemconfig(self.canvas_window_tab4, height=final_h)
+            self.canvas_tab4.configure(scrollregion=(0, 0, self.canvas_tab4.winfo_width(), req_h))
+
+        def _on_tab4_canvas_configure(event):
+            # Luôn lấp đầy chiều rộng của màn hình
+            self.canvas_tab4.itemconfig(self.canvas_window_tab4, width=event.width)
+            req_h = container.winfo_reqheight()
+            final_h = max(req_h, event.height)
+            self.canvas_tab4.itemconfig(self.canvas_window_tab4, height=final_h)
+            self.canvas_tab4.configure(scrollregion=(0, 0, event.width, req_h))
+
+        container.bind("<Configure>", _on_tab4_frame_configure)
+        self.canvas_tab4.bind("<Configure>", _on_tab4_canvas_configure)
+
+        # Cột trái: Nhóm tự cài đặt (NumPy)
+        self.cv_left_box = ttk.LabelFrame(container, text=" 1. NHÓM TỰ CÀI ĐẶT (NUMPY FROM-SCRATCH) ", padding=6)
+        self.cv_left_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=4)
+
+        self.lbl_cv_our_img = ttk.Label(self.cv_left_box, text="Chưa chạy đối chứng", anchor="center")
+        self.lbl_cv_our_img.pack(fill=tk.BOTH, expand=True)
+
+        self.lbl_cv_our_metrics = ttk.Label(
+            self.cv_left_box,
+            text="Thời gian: -- ms | Độ sáng TB: -- | Độ tương phản: --",
+            font=("Segoe UI", 9, "bold"),
+            anchor="center",
+            foreground="#1b4d3e"
+        )
+        self.lbl_cv_our_metrics.pack(fill=tk.X, pady=4)
+
+        # Cột phải: OpenCV thư viện chuẩn
+        self.cv_right_box = ttk.LabelFrame(container, text=" 2. THƯ VIỆN OPENCV (CV2 STANDARD) ", padding=6)
+        self.cv_right_box.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=4)
+
+        self.lbl_cv_lib_img = ttk.Label(self.cv_right_box, text="Chưa chạy đối chứng", anchor="center")
+        self.lbl_cv_lib_img.pack(fill=tk.BOTH, expand=True)
+
+        self.lbl_cv_lib_metrics = ttk.Label(
+            self.cv_right_box,
+            text="Thời gian: -- ms | Độ sáng TB: -- | Độ tương phản: --",
+            font=("Segoe UI", 9, "bold"),
+            anchor="center",
+            foreground="#2b6cb0"
+        )
+        self.lbl_cv_lib_metrics.pack(fill=tk.X, pady=4)
+
+        # Khung kết luận định lượng ở đáy Tab 4
+        self.lbl_cv_conclusion = ttk.Label(
+            panel,
+            text="Bấm 'Chạy đối chứng với OpenCV' để phân tích sai số định lượng (MAE, chênh lệch tốc độ).",
+            font=("Segoe UI", 10, "bold"),
+            relief=tk.GROOVE,
+            padding=6,
+            anchor="center",
+            foreground="#1a365d"
+        )
+        self.lbl_cv_conclusion.pack(fill=tk.X, pady=(6, 0))
+
+    # -------------------------------------------------------------
     # LOGIC XỬ LÝ SỰ KIỆN
     # -------------------------------------------------------------
+    def _on_zoom_change(self, val):
+        self.zoom_size = int(float(val))
+        self.zoom_lbl.config(text=f"{self.zoom_size} px")
+        self._refresh_tab1_display()
+
+    def _on_zoom_reset(self):
+        self.zoom_size = 460
+        self.zoom_scale.set(460)
+        self.zoom_lbl.config(text="460 px")
+        self._refresh_tab1_display()
+
+    def _refresh_tab1_display(self):
+        """Vẽ lại ảnh gốc và ảnh kết quả trên Tab 1 theo zoom_size hiện thời."""
+        if self.original_image is not None:
+            self._display_image(self.original_image, self.lbl_orig_img, max_w=self.zoom_size, max_h=self.zoom_size)
+        if self.enhanced_image is not None:
+            self._display_image(self.enhanced_image, self.lbl_enh_img, max_w=self.zoom_size, max_h=self.zoom_size)
+
+    def _on_zoom_change_tab3(self, val):
+        self.zoom_size_tab3 = int(float(val))
+        self.zoom_lbl_tab3.config(text=f"{self.zoom_size_tab3} px")
+        self._refresh_tab3_display()
+
+    def _on_zoom_reset_tab3(self):
+        self.zoom_size_tab3 = 280
+        self.zoom_scale_tab3.set(280)
+        self.zoom_lbl_tab3.config(text="280 px")
+        self._refresh_tab3_display()
+
+    def _refresh_tab3_display(self):
+        """Vẽ lại cả 4 ảnh trong Tab 3 theo zoom_size_tab3."""
+        for key, img in self.multi_compare_images.items():
+            if key in self.multi_boxes:
+                lbl_img = self.multi_boxes[key]["lbl_img"]
+                self._display_image(img, lbl_img, max_w=self.zoom_size_tab3, max_h=int(self.zoom_size_tab3 * 0.8))
+        self.update_idletasks()
+        if hasattr(self, "canvas_tab3"):
+            req_h = self.canvas_tab3.winfo_children()[0].winfo_reqheight() if self.canvas_tab3.winfo_children() else 0
+            final_h = max(req_h, self.canvas_tab3.winfo_height())
+            self.canvas_tab3.itemconfig(self.canvas_window_tab3, height=final_h)
+            self.canvas_tab3.configure(scrollregion=(0, 0, self.canvas_tab3.winfo_width(), req_h))
+
+    def _on_zoom_change_tab4(self, val):
+        self.zoom_size_tab4 = int(float(val))
+        self.zoom_lbl_tab4.config(text=f"{self.zoom_size_tab4} px")
+        self._refresh_tab4_display()
+
+    def _on_zoom_reset_tab4(self):
+        self.zoom_size_tab4 = 460
+        self.zoom_scale_tab4.set(460)
+        self.zoom_lbl_tab4.config(text="460 px")
+        self._refresh_tab4_display()
+
+    def _refresh_tab4_display(self):
+        """Vẽ lại 2 ảnh trong Tab 4 theo zoom_size_tab4."""
+        if "our" in self.opencv_compare_images:
+            self._display_image(self.opencv_compare_images["our"], self.lbl_cv_our_img, max_w=self.zoom_size_tab4, max_h=self.zoom_size_tab4)
+        if "cv" in self.opencv_compare_images:
+            self._display_image(self.opencv_compare_images["cv"], self.lbl_cv_lib_img, max_w=self.zoom_size_tab4, max_h=self.zoom_size_tab4)
+        self.update_idletasks()
+        if hasattr(self, "canvas_tab4"):
+            req_h = self.canvas_tab4.winfo_children()[0].winfo_reqheight() if self.canvas_tab4.winfo_children() else 0
+            final_h = max(req_h, self.canvas_tab4.winfo_height())
+            self.canvas_tab4.itemconfig(self.canvas_window_tab4, height=final_h)
+            self.canvas_tab4.configure(scrollregion=(0, 0, self.canvas_tab4.winfo_width(), req_h))
+
     def _on_algo_changed(self, event=None):
         method = self.algo_var.get()
         if method == "gamma":
@@ -421,7 +717,7 @@ class MainWindow(tk.Tk):
             self.input_image_path = path
 
             # Hiển thị ảnh gốc trên Tab 1
-            self._display_image(self.original_image, self.lbl_orig_img, max_w=460, max_h=460)
+            self._display_image(self.original_image, self.lbl_orig_img, max_w=self.zoom_size, max_h=self.zoom_size)
 
             H, W = self.original_image.shape[:2]
             mode = "RGB" if self.original_image.ndim == 3 else "Grayscale"
@@ -433,11 +729,13 @@ class MainWindow(tk.Tk):
             )
 
             # Cập nhật ô gốc trong Tab 3
-            self._display_image(self.original_image, self.multi_boxes["orig"]["lbl_img"], max_w=280, max_h=220)
+            self.multi_compare_images["orig"] = self.original_image
+            self._display_image(self.original_image, self.multi_boxes["orig"]["lbl_img"], max_w=self.zoom_size_tab3, max_h=int(self.zoom_size_tab3 * 0.8))
             self.multi_boxes["orig"]["lbl_info"].config(text=f"Độ sáng TB: {mean_b:.1f} | Std: {std_b:.1f}")
 
             self.btn_run.config(state=tk.NORMAL)
             self.btn_run_all.config(state=tk.NORMAL)
+            self.btn_run_opencv_compare.config(state=tk.NORMAL)
             self.status_var.set(f"Đã mở: {path.name} ({W}x{H}). Đang thực thi thuật toán...")
 
             # Tự động chạy thuật toán được chọn
@@ -464,7 +762,7 @@ class MainWindow(tk.Tk):
             self.enhanced_image = res["image"]
 
             # Hiển thị ảnh sau tăng cường trên Tab 1
-            self._display_image(self.enhanced_image, self.lbl_enh_img, max_w=460, max_h=460)
+            self._display_image(self.enhanced_image, self.lbl_enh_img, max_w=self.zoom_size, max_h=self.zoom_size)
 
             t_ms = res["algorithm_ms"]
             mean_enh = float(np.mean(self.enhanced_image))
@@ -494,13 +792,13 @@ class MainWindow(tk.Tk):
     def _on_peek_original_press(self, event=None):
         """Khi nhấn giữ chuột, tạm thời hiển thị ảnh gốc ở khung kết quả."""
         if self.original_image is not None and self.enhanced_image is not None:
-            self._display_image(self.original_image, self.lbl_enh_img, max_w=460, max_h=460)
+            self._display_image(self.original_image, self.lbl_enh_img, max_w=self.zoom_size, max_h=self.zoom_size)
             self.lbl_enh_metrics.config(text="[ĐANG HIỂN THỊ ẢNH GỐC ĐỂ SO SÁNH]")
 
     def _on_peek_original_release(self, event=None):
         """Khi nhả chuột, hiển thị lại ảnh sau xử lý."""
         if self.enhanced_image is not None and self.last_pipeline_result is not None:
-            self._display_image(self.enhanced_image, self.lbl_enh_img, max_w=460, max_h=460)
+            self._display_image(self.enhanced_image, self.lbl_enh_img, max_w=self.zoom_size, max_h=self.zoom_size)
             res = self.last_pipeline_result
             t_ms = res["algorithm_ms"]
             mean_enh = float(np.mean(self.enhanced_image))
@@ -538,7 +836,8 @@ class MainWindow(tk.Tk):
             lbl_img = self.multi_boxes[method]["lbl_img"]
             lbl_info = self.multi_boxes[method]["lbl_info"]
 
-            self._display_image(img, lbl_img, max_w=280, max_h=220)
+            self.multi_compare_images[method] = img
+            self._display_image(img, lbl_img, max_w=self.zoom_size_tab3, max_h=int(self.zoom_size_tab3 * 0.8))
             mock_note = " (MOCK)" if is_mock else ""
             lbl_info.config(
                 text=f"Thời gian: {t_ms:.2f} ms{mock_note} | TB: {mean_v:.1f} | Std: {std_v:.1f}"
@@ -546,6 +845,85 @@ class MainWindow(tk.Tk):
 
         self.status_var.set("Đã hoàn thành so sánh đồng thời 3 thuật toán!")
         self.notebook.select(self.tab_multi)
+
+    def _on_run_opencv_comparison(self):
+        """Chạy đối chứng thuật toán được chọn với thư viện OpenCV và cập nhật Tab 4."""
+        if self.original_image is None:
+            return
+
+        method = self.cv_algo_var.get()
+        self.status_var.set(f"Đang chạy đối chứng [{method.upper()}] với OpenCV...")
+        self.update_idletasks()
+
+        is_color = (self.original_image.ndim == 3 and self.original_image.shape[2] == 3)
+        if is_color:
+            y_orig, cb, cr = rgb_to_ycbcr(self.original_image)
+        else:
+            y_orig = self.original_image.copy()
+
+        params = {}
+        if method == "gamma":
+            params = {"gamma": float(self.gamma_scale.get())}
+        elif method == "clahe":
+            params = {
+                "grid": (8, 8),
+                "clip_factor": float(self.clip_scale.get())
+            }
+
+        try:
+            res = compare_with_opencv(y_orig, method=method, params=params)
+            our_y = res["our_result"]
+            cv_y = res["cv_result"]
+            mae = res["mae"]
+            our_ms = res["our_ms"]
+            cv_ms = res["cv_ms"]
+
+            # Khôi phục ảnh RGB nếu đầu vào là ảnh màu
+            if is_color:
+                our_img = ycbcr_to_rgb(our_y, cb, cr)
+                cv_img = ycbcr_to_rgb(cv_y, cb, cr)
+            else:
+                our_img = our_y
+                cv_img = cv_y
+
+            # Hiển thị 2 ảnh trên Tab 4
+            self.opencv_compare_images["our"] = our_img
+            self.opencv_compare_images["cv"] = cv_img
+            self._display_image(our_img, self.lbl_cv_our_img, max_w=self.zoom_size_tab4, max_h=self.zoom_size_tab4)
+            self._display_image(cv_img, self.lbl_cv_lib_img, max_w=self.zoom_size_tab4, max_h=self.zoom_size_tab4)
+
+            # Cập nhật thông số
+            our_mean = float(np.mean(our_img))
+            our_std = float(np.std(our_img))
+            cv_mean = float(np.mean(cv_img))
+            cv_std = float(np.std(cv_img))
+
+            self.lbl_cv_our_metrics.config(
+                text=f"Thời gian: {our_ms:.2f} ms | Độ sáng TB: {our_mean:.1f} | Độ tương phản: {our_std:.1f}"
+            )
+            self.lbl_cv_lib_metrics.config(
+                text=f"Thời gian: {cv_ms:.2f} ms | Độ sáng TB: {cv_mean:.1f} | Độ tương phản: {cv_std:.1f}"
+            )
+
+            # Đánh giá kết luận
+            if mae < 1e-4:
+                eval_text = f"Độ khớp tuyệt đối: MAE = {mae:.4f} (Trùng khớp 100% với OpenCV!)"
+                eval_color = "#22543d"
+            else:
+                eval_text = f"Sai số trung bình: MAE = {mae:.4f} mức xám | Chênh lệch tốc độ: Nhóm {our_ms:.1f}ms vs CV {cv_ms:.1f}ms"
+                eval_color = "#1a365d"
+
+            self.lbl_cv_conclusion.config(
+                text=f"Thuật toán [{method.upper()}]: {eval_text}",
+                foreground=eval_color
+            )
+
+            self.status_var.set(f"Đã hoàn thành đối chứng [{method.upper()}] với OpenCV! MAE = {mae:.4f}")
+            self.notebook.select(self.tab_opencv)
+
+        except Exception as e:
+            messagebox.showerror("Lỗi đối chứng", f"Quá trình đối chứng với OpenCV thất bại: {str(e)}")
+            self.status_var.set("Lỗi thực thi đối chứng OpenCV.")
 
     def _on_save_image(self):
         if self.enhanced_image is None:
