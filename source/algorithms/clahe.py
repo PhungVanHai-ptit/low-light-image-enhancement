@@ -11,6 +11,7 @@ Nguyên lý:
     4. Sử dụng nội suy song tuyến tính (bilinear interpolation) giữa 4 tâm ô lân cận để tính mức xám
        cho từng pixel, loại bỏ hiện tượng phân mảng khối (checkerboard artifacts).
 """
+from numbers import Integral, Real
 import numpy as np
 
 
@@ -59,10 +60,15 @@ def clahe(
     if y.dtype != np.uint8:
         raise ValueError(f"Dữ liệu kênh Y phải ở kiểu uint8, nhận được {y.dtype}")
 
-    if len(grid) != 2 or grid[0] < 1 or grid[1] < 1:
+    if (not isinstance(grid, (tuple, list)) or len(grid) != 2
+            or any(isinstance(value, (bool, np.bool_))
+                   or not isinstance(value, Integral) or value <= 0
+                   for value in grid)):
         raise ValueError(f"grid phải là tuple (grid_y, grid_x) gồm 2 số nguyên dương, nhận được {grid}")
 
-    if clip_factor <= 0:
+    if (isinstance(clip_factor, (bool, np.bool_))
+            or not isinstance(clip_factor, Real)
+            or not np.isfinite(clip_factor) or clip_factor <= 0):
         raise ValueError(f"clip_factor phải là số thực dương lớn hơn 0, nhận được {clip_factor}")
 
     H, W = y.shape
