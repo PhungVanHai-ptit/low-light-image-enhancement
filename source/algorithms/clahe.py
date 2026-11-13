@@ -15,31 +15,19 @@ import numpy as np
 
 
 def _redistribute_histogram(hist: np.ndarray, clip_limit: int) -> np.ndarray:
+    """Clip once, then redistribute every removed count.
+
+    Redistribution may raise bins above the initial clipping threshold.
     """
-    Cắt ngưỡng histogram tại clip_limit và phân phối đều phần dư vào các bin còn lại.
-    Lặp lại cho đến khi không còn phần dư nào vượt ngưỡng.
-    """
-    hist = hist.copy()
-    for _ in range(100):
-        excess_mask = hist > clip_limit
-        excess = int(np.sum(hist[excess_mask] - clip_limit))
-        if excess == 0:
-            break
-        hist[excess_mask] = clip_limit
-        bonus = excess // 256
-        residual = excess % 256
-        hist += bonus
-        if residual > 0:
-            under = np.where(hist < clip_limit)[0]
-            if len(under) == 0:
-                break
-            if len(under) <= residual:
-                hist[under] += 1
-            else:
-                step = len(under) / residual
-                chosen = [under[int(k * step)] for k in range(residual)]
-                hist[chosen] += 1
-    return hist
+    clipped = np.minimum(hist, clip_limit).astype(np.int64)
+    excess = int(np.sum(hist, dtype=np.int64) - clipped.sum())
+    bonus, residual = divmod(excess, 256)
+    clipped += bonus
+    if residual:
+        indices = np.arange(residual) * 256 // residual
+        clipped[indices] += 1
+    return clipped
+
 
 
 def clahe(
