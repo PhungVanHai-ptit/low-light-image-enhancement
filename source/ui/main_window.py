@@ -950,12 +950,12 @@ class MainWindow(tk.Tk):
             self.status_var.set("Lỗi thực thi đối chứng OpenCV.")
 
     def _on_save_image(self):
-        if self.enhanced_image is None:
+        if self.enhanced_image is None or self.last_pipeline_result is None:
             return
 
-        method = self.algo_var.get()
-        orig_name = self.input_image_path.name if self.input_image_path else "out.png"
-        init_name = f"enhanced_{method}_{orig_name}"
+        method = self.last_pipeline_result["method"]
+        orig_stem = self.input_image_path.stem if self.input_image_path else "out"
+        init_name = f"enhanced_{method}_{orig_stem}.png"
 
         save_path = filedialog.asksaveasfilename(
             title="Lưu ảnh kết quả",

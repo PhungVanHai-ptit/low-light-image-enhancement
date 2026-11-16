@@ -47,17 +47,26 @@ def save_image(image: np.ndarray, path: Union[str, Path]) -> Path:
     """
     Lưu mảng numpy (uint8) thành file ảnh PNG/JPEG.
     """
-    if image.dtype != np.uint8:
+    if not isinstance(image, np.ndarray) or image.dtype != np.uint8:
         raise ValueError("Ảnh cần lưu phải có kiểu dữ liệu uint8")
 
+    if image.size == 0 or not (
+        image.ndim == 2 or (image.ndim == 3 and image.shape[2] == 3)
+    ):
+        raise ValueError("Ảnh cần lưu phải là ảnh xám hoặc RGB không rỗng")
+
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    formats = {".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG"}
+    image_format = formats.get(path.suffix.lower())
+    if image_format is None:
+        raise ValueError("Đuôi file phải là .png, .jpg hoặc .jpeg")
 
     img = Image.fromarray(image)
-    if path.suffix.lower() in (".jpg", ".jpeg"):
-        img.save(path, quality=95)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if image_format == "JPEG":
+        img.save(path, format=image_format, quality=95)
     else:
-        img.save(path, format="PNG")
+        img.save(path, format=image_format)
 
     return path
 
