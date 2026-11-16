@@ -60,3 +60,40 @@ class TestParameterValidation(unittest.TestCase):
         for method, params in (("he", []), (None, {})):
             with self.assertRaises(ValueError):
                 enhance(y, method, params)
+
+
+class TestComparisonParameters(unittest.TestCase):
+    def test_invalid_options_are_rejected_before_measurement(self):
+        from source.evaluation.benchmark import compare_with_opencv
+        y = np.arange(64, dtype=np.uint8).reshape(8, 8)
+        cases = [
+            ("he", {"gamma": 0.6}), ("gamma", {"extra": 1}),
+            ("clahe", {"extra": 1}), ("he", []),
+            (None, {}), ("unknown", {})
+        ]
+        with patch("source.evaluation.benchmark._measure_algorithm") as measure:
+            for method, params in cases:
+                with self.subTest(method=method, params=params):
+                    with self.assertRaises(ValueError):
+                        compare_with_opencv(y, method, params)
+            measure.assert_not_called()
+
+    def test_valid_options_match_pipeline(self):
+        from source.evaluation.benchmark import compare_with_opencv
+        from source.core.pipeline import enhance
+        y = np.arange(256, dtype=np.uint8).reshape(16, 16)
+        cases = [
+            ("HE", None), ("he", {}),
+            ("gamma", {"gamma": 0.8}),
+            ("clahe", {"grid": (2, 4), "clip_factor": 3.0}),
+        ]
+        original = y.copy()
+        for method, params in cases:
+            with self.subTest(method=method, params=params):
+                result = compare_with_opencv(y, method, params)
+                expected = enhance(y, method, params)["y_result"]
+                np.testing.assert_array_equal(result["our_result"], expected)
+                np.testing.assert_array_equal(y, original)
+                self.assertTrue(np.isfinite(result["mae"]))
+                self.assertGreaterEqual(result["our_ms"], 0)
+                self.assertGreaterEqual(result["cv_ms"], 0)
