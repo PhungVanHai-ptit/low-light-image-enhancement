@@ -702,6 +702,29 @@ class MainWindow(tk.Tk):
         if self.realtime_var.get() and self.original_image is not None:
             self._on_process()
 
+    def _clear_previous_results(self):
+        """Clear results tied to the previous image after a successful load."""
+        self.enhanced_image = None
+        self.last_pipeline_result = None
+        self.btn_save.config(state=tk.DISABLED)
+        self.multi_compare_images.clear()
+        self.opencv_compare_images.clear()
+
+        image_labels = [self.lbl_enh_img, self.lbl_cv_our_img, self.lbl_cv_lib_img]
+        image_labels.extend(box["lbl_img"] for box in self.multi_boxes.values())
+        for label in image_labels:
+            label.config(image="", text="Chưa xử lý ảnh mới")
+            label.image = None
+
+        metric_labels = [
+            self.lbl_enh_metrics, self.lbl_cv_our_metrics, self.lbl_cv_lib_metrics
+        ]
+        metric_labels.extend(box["lbl_info"] for box in self.multi_boxes.values())
+        for label in metric_labels:
+            label.config(text="")
+        self.lbl_cv_conclusion.config(text="Chạy đối chứng cho ảnh mới.")
+        self._init_empty_hist_axes()
+
     def _on_load_image(self):
         filetypes = [
             ("Image files", "*.jpg *.jpeg *.png *.bmp *.webp"),
@@ -715,6 +738,7 @@ class MainWindow(tk.Tk):
             path = Path(chosen)
             self.original_image = load_image(path)
             self.input_image_path = path
+            self._clear_previous_results()
 
             # Hiển thị ảnh gốc trên Tab 1
             self._display_image(self.original_image, self.lbl_orig_img, max_w=self.zoom_size, max_h=self.zoom_size)
@@ -822,7 +846,7 @@ class MainWindow(tk.Tk):
         configs = [
             ("gamma", {"gamma": gamma_val}),
             ("he", {}),
-            ("clahe", {"grid": (8, 8), "clip_factor": 2.0})
+            ("clahe", {"grid": (8, 8), "clip_factor": float(self.clip_scale.get())})
         ]
 
         for method, params in configs:
@@ -926,12 +950,12 @@ class MainWindow(tk.Tk):
             self.status_var.set("Lỗi thực thi đối chứng OpenCV.")
 
     def _on_save_image(self):
-        if self.enhanced_image is None:
+        if self.enhanced_image is None or self.last_pipeline_result is None:
             return
 
-        method = self.algo_var.get()
-        orig_name = self.input_image_path.name if self.input_image_path else "out.png"
-        init_name = f"enhanced_{method}_{orig_name}"
+        method = self.last_pipeline_result["method"]
+        orig_stem = self.input_image_path.stem if self.input_image_path else "out"
+        init_name = f"enhanced_{method}_{orig_stem}.png"
 
         save_path = filedialog.asksaveasfilename(
             title="Lưu ảnh kết quả",

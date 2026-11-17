@@ -6,6 +6,7 @@ import time
 from typing import Optional, Dict, Any
 import numpy as np
 from source.core.color import rgb_to_ycbcr, ycbcr_to_rgb
+from source.core.parameters import validate_algorithm_params
 
 
 # Cung cấp hàm giả lập (mock) nếu các module chưa hoàn thành
@@ -17,12 +18,7 @@ def enhance(image: np.ndarray, method: str, params: Optional[Dict[str, Any]] = N
     """
     Pipeline chính: Tách Y -> Chạy thuật toán -> Ghép màu -> Đo thời gian.
     """
-    if params is None:
-        params = {}
-
-    method = method.lower()
-    if method not in ("gamma", "he", "clahe"):
-        raise ValueError(f"Thuật toán không hợp lệ: {method}")
+    method, params = validate_algorithm_params(method, params)
 
     is_color = (image.ndim == 3 and image.shape[2] == 3)
 

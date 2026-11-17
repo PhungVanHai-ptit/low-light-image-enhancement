@@ -55,6 +55,43 @@ class TestIO(unittest.TestCase):
         with self.assertRaises(ValueError):
             save_image(img_float, self.tmp_dir / "bad.png")
 
+    def test_saved_format_matches_extension(self):
+        from PIL import Image
+        for shape in ((8, 9), (8, 9, 3)):
+            image = np.arange(np.prod(shape), dtype=np.uint8).reshape(shape)
+            for suffix, expected in ((".png", "PNG"), (".PNG", "PNG"),
+                                     (".jpg", "JPEG"), (".jpeg", "JPEG"), (".JPG", "JPEG")):
+                with self.subTest(shape=shape, suffix=suffix):
+                    path = self.tmp_dir / ("output" + suffix)
+                    self.assertEqual(save_image(image, path), path)
+                    with Image.open(path) as saved:
+                        self.assertEqual(saved.format, expected)
+                        self.assertEqual(saved.size, (9, 8))
+                        if expected == "PNG":
+                            np.testing.assert_array_equal(np.array(saved), image)
+
+    def test_invalid_extension_has_no_file_side_effects(self):
+        image = np.zeros((8, 8), dtype=np.uint8)
+        for suffix in (".bmp", ".webp", ".invalid", ""):
+            with self.subTest(suffix=suffix):
+                existing = self.tmp_dir / ("existing" + suffix)
+                existing.write_bytes(b"keep existing contents")
+                with self.assertRaises(ValueError):
+                    save_image(image, existing)
+                self.assertEqual(existing.read_bytes(), b"keep existing contents")
+                new_path = self.tmp_dir / ("new" + suffix) / ("output" + suffix)
+                with self.assertRaises(ValueError):
+                    save_image(image, new_path)
+                self.assertFalse(new_path.parent.exists())
+
+    def test_invalid_image_has_no_file_side_effects(self):
+        for image in (None, np.zeros((0, 8), dtype=np.uint8),
+                      np.zeros((8, 8, 4), dtype=np.uint8)):
+            path = self.tmp_dir / "invalid.png"
+            with self.assertRaises(ValueError):
+                save_image(image, path)
+            self.assertFalse(path.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

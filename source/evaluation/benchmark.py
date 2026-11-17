@@ -12,6 +12,7 @@ import cv2
 
 from source.core.io import load_image
 from source.core.color import rgb_to_ycbcr
+from source.core.parameters import validate_algorithm_params
 from source.algorithms.gamma import gamma_correct
 from source.algorithms.hist_equal import equalize_hist
 from source.algorithms.clahe import clahe as clahe_custom
@@ -36,12 +37,7 @@ def compare_with_opencv(y: np.ndarray, method: str, params: Optional[dict] = Non
     method: 'gamma', 'he' or 'clahe'; times are five-run medians after warm-up
     Returns: {"our_result": ndarray, "cv_result": ndarray, "mae": float, "our_ms": float, "cv_ms": float}
     """
-    if params is None:
-        params = {}
-
-    method = method.lower()
-    if method not in ("gamma", "he", "clahe"):
-        raise ValueError(f"Unsupported method for OpenCV comparison: {method}")
+    method, params = validate_algorithm_params(method, params)
 
     if method == "gamma":
         gamma_val = params.get("gamma", 0.6)
